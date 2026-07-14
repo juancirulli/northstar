@@ -1,0 +1,11 @@
+/* Reset mínimo. El grueso de los estilos vive dentro del componente Northstar. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: #ffffff;
+}
+
+* {
+  box-sizing: border-box;
+}
