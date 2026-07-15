@@ -14,7 +14,7 @@ import { useState, useEffect, useRef } from "react";
     • Dólar  → dolarapi.com (CCL/MEP)
 
   Módulos ("Tu vida") → menú hamburguesa arriba a la derecha.
-  El día y Pendientes → editar, arrastrar y reordenar.
+  Calendario y Pendientes → editar, arrastrar y reordenar.
   ------------------------------------------------------------------
 */
 
@@ -257,7 +257,7 @@ function Home({ go }) {
       <section>
         <div className="split">
           <div className="split-col">
-            <div className="sec-label">El día</div>
+            <div className="sec-label">Calendario</div>
             <Agenda />
           </div>
           <div className="split-col">
