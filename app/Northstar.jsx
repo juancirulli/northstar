@@ -1506,23 +1506,37 @@ const isoIn = (days) => {
 };
 
 // ---------------- Persistencia (localStorage) ----------------
-// Igual que useState, pero guarda y restaura solo bajo una clave.
+// Igual que useState, pero guarda y restaura bajo una clave.
+//
+// IMPORTANTE (hidratación): el estado inicial es SIEMPRE `initial`, tanto en
+// servidor como en el primer render del cliente — nunca leemos localStorage
+// ahí, porque el servidor no tiene localStorage y el cliente sí, lo que
+// generaba un mismatch (texto distinto entre servidor y cliente → error de
+// hidratación). Los datos guardados se cargan recién en un useEffect, que
+// solo corre en el navegador, después de que el primer render ya coincidió.
 function useStored(key, initial) {
-  const [value, setValue] = useState(() => {
-    if (typeof window === "undefined") return initial;
+  const [value, setValue] = useState(initial);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Cargar lo guardado, una sola vez, ya en el cliente.
+  useEffect(() => {
     try {
       const raw = window.localStorage.getItem("northstar:" + key);
-      return raw != null ? JSON.parse(raw) : initial;
-    } catch {
-      return initial;
-    }
-  });
+      if (raw != null) setValue(JSON.parse(raw));
+    } catch {}
+    setHydrated(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Guardar cambios, pero solo después de hidratar (para no pisar lo
+  // guardado con el `initial` antes de haber tenido chance de leerlo).
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (!hydrated) return;
     try {
       window.localStorage.setItem("northstar:" + key, JSON.stringify(value));
     } catch {}
-  }, [key, value]);
+  }, [key, value, hydrated]);
+
   return [value, setValue];
 }
 
