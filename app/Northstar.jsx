@@ -183,8 +183,13 @@ function Home({ go }) {
   const { loading: eventsLoading, events } = useCalendarEvents();
   const alerts = useBriefingAlerts(weather);
 
-  const hour = now ? now.getHours() : 8;
-  const greeting = greetingByHour(hour);
+  // Ojo con la hidratación: mientras `now` es null (mismo estado inicial en
+  // servidor y cliente), NO calculamos un saludo "de respaldo" — eso causaba
+  // un mismatch (servidor decía "Buen día", cliente lo cambiaba a "Buenas
+  // noches" un instante después). Mostramos un saludo neutro hasta tener la
+  // hora real, y recién ahí calculamos el definitivo.
+  const hour = now ? now.getHours() : null;
+  const greeting = hour === null ? "Hola, Juan." : greetingByHour(hour);
 
   // Solo pedimos el briefing cuando ya tenemos algo de clima y sabemos si
   // terminó de cargar la agenda (para no mandar un contexto vacío de arranque).
@@ -194,7 +199,7 @@ function Home({ go }) {
     events,
     birthday: bday.today ? cleanBirthdayName(bday.today.title) : null,
     alerts,
-    hour,
+    hour: hour ?? new Date().getHours(), // fallback solo para el envío al backend, nunca para el render
     ready: briefingReady,
   });
 
