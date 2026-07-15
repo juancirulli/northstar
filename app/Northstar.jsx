@@ -14,7 +14,7 @@ import { useState, useEffect, useRef } from "react";
     • Dólar  → dolarapi.com (CCL/MEP)
 
   Módulos ("Tu vida") → menú hamburguesa arriba a la derecha.
-  El día y Pendientes → editar, arrastrar y reordenar.
+  Calendario y Pendientes → editar, arrastrar y reordenar.
   ------------------------------------------------------------------
 */
 
