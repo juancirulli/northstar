@@ -180,8 +180,6 @@ function Home({ go }) {
   const market = useMarket();
   const bday = useBirthdayEvent();
   const voice = useDailyVoice();
-  const { loading: eventsLoading, events } = useCalendarEvents();
-  const alerts = useBriefingAlerts(weather);
 
   // Ojo con la hidratación: mientras `now` es null (mismo estado inicial en
   // servidor y cliente), NO calculamos un saludo "de respaldo" — eso causaba
@@ -190,18 +188,6 @@ function Home({ go }) {
   // hora real, y recién ahí calculamos el definitivo.
   const hour = now ? now.getHours() : null;
   const greeting = hour === null ? "Hola, Juan." : greetingByHour(hour);
-
-  // Solo pedimos el briefing cuando ya tenemos algo de clima y sabemos si
-  // terminó de cargar la agenda (para no mandar un contexto vacío de arranque).
-  const briefingReady = !!weather && !eventsLoading;
-  const briefingText = useBriefingText({
-    weather,
-    events,
-    birthday: bday.today ? cleanBirthdayName(bday.today.title) : null,
-    alerts,
-    hour: hour ?? new Date().getHours(), // fallback solo para el envío al backend, nunca para el render
-    ready: briefingReady,
-  });
 
   const eyebrow = now
     ? `${cap(now.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" }))} · ${now.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false })}`
@@ -214,7 +200,6 @@ function Home({ go }) {
           <div className="hero-left">
             <div className="eyebrow">{eyebrow}</div>
             <h1 className="briefing">{greeting}</h1>
-            {briefingText && <p className="briefing-lines">{briefingText}</p>}
 
             <div className="chips">
               <div className="chip chip-tap" onClick={() => go("weather")}>
@@ -1423,75 +1408,11 @@ function useDailyVoice() {
   return voice;
 }
 
-/*
-  Briefing inteligente (por reglas, sin IA).
-  Lee los deadlines guardados de Jeep y Yukon y detecta lo urgente (≤7 días).
-  Cuando conectes tu API key de Claude en Vercel, podés reemplazar la lógica
-  interna por una llamada al modelo sin tocar el resto del componente.
-*/
-function useBriefingAlerts(weather) {
-  const [alerts, setAlerts] = useState([]);
-  useEffect(() => {
-    const out = [];
-    const scan = (key, label) => {
-      try {
-        const raw = localStorage.getItem("northstar:" + key);
-        if (!raw) return;
-        const blocks = JSON.parse(raw);
-        blocks.forEach((b) =>
-          (b.rows || []).forEach((r) => {
-            if (!r.due) return;
-            const info = deadlineInfo(r.due);
-            if (info && info.days <= 7) {
-              out.push({ main: r.main, text: info.text, level: info.level, from: label, days: info.days });
-            }
-          })
-        );
-      } catch {}
-    };
-    scan("car", "Jeep");
-    scan("dog", "Yukon");
-    out.sort((a, b) => a.days - b.days);
-    setAlerts(out.slice(0, 3));
-  }, [weather]);
-  return alerts;
-}
-
 function greetingByHour(h) {
   if (h < 6) return "Buenas noches, Juan.";
   if (h < 13) return "Buen día, Juan.";
   if (h < 20) return "Buenas tardes, Juan.";
   return "Buenas noches, Juan.";
-}
-
-/*
-  Briefing con IA (Claude). Junta clima + agenda de hoy + cumpleaños + alertas
-  urgentes de Jeep/Yukon, y le pide al backend (/api/briefing) que Claude lo
-  sintetice en una frase natural. Si algo falla (sin API key configurada,
-  error de red, etc.) se degrada con silencio: el saludo simplemente no
-  muestra un párrafo debajo, en vez de mostrar un error feo.
-*/
-function useBriefingText({ weather, events, birthday, alerts, hour, ready }) {
-  const [text, setText] = useState(null);
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    fetch("/api/briefing", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ weather, events, birthday, alerts, hour }),
-    })
-      .then((r) => r.json())
-      .then((d) => {
-        if (cancelled) return;
-        setText(d.text || null);
-      })
-      .catch(() => { if (!cancelled) setText(null); });
-    return () => { cancelled = true; };
-    // Se recalcula si cambian los datos de entrada (clima recién cargado, etc.)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, JSON.stringify(events), weather?.temp, birthday, JSON.stringify(alerts)]);
-  return text;
 }
 
 // utils
