@@ -240,18 +240,7 @@ function Home({ go }) {
         <div className="split">
           <div className="split-col">
             <div className="sec-label">El día</div>
-            <Reorderable
-              initial={[
-                { id: "a", txt: "Correr · 10K suaves", meta: "07:00 · Costanera" },
-                { id: "b", txt: "Sync semanal · Cilux", meta: "10:00 · Meet" },
-                { id: "c", txt: "Almuerzo con proveedor", meta: "13:30 · Munro" },
-                { id: "d", txt: "Catálogo premium", meta: "16:00 · Deep work" },
-                { id: "e", txt: "Gimnasio · empuje", meta: "19:30" },
-              ]}
-              kind="agenda"
-              placeholder="Agregar al día…"
-              storeKey="agenda"
-            />
+            <Agenda />
           </div>
           <div className="split-col">
             <div className="sec-label">Pendientes</div>
@@ -341,6 +330,64 @@ function WorldClocks() {
               </span>
             </>
           )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------- Agenda real (Google Calendar, solo lectura) ----------------
+function Agenda() {
+  const { loading, events, error } = useCalendarEvents();
+
+  if (loading) {
+    return <div className="agenda-empty">Cargando tu agenda…</div>;
+  }
+  if (error === "no_config") {
+    return <div className="agenda-empty">Conectá tu Google Calendar para ver tu semana acá.</div>;
+  }
+  if (error) {
+    return <div className="agenda-empty">No se pudo cargar el calendario ahora.</div>;
+  }
+  if (events.length === 0) {
+    return <div className="agenda-empty">Nada agendado en los próximos 7 días.</div>;
+  }
+
+  // Agrupar por día
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const groups = [];
+  const byDay = {};
+  events.forEach((e) => {
+    const d = new Date(e.start);
+    const dayKey = d.toDateString();
+    if (!byDay[dayKey]) {
+      byDay[dayKey] = { date: d, items: [] };
+      groups.push(byDay[dayKey]);
+    }
+    byDay[dayKey].items.push(e);
+  });
+
+  const dayLabel = (d) => {
+    const diff = Math.round((d - today) / 86400000);
+    if (diff === 0) return "Hoy";
+    if (diff === 1) return "Mañana";
+    return cap(d.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "short" }));
+  };
+
+  return (
+    <div className="agenda-real">
+      {groups.map((g, gi) => (
+        <div className="agenda-group" key={gi}>
+          <div className="agenda-day">{dayLabel(g.date)}</div>
+          {g.items.map((e, i) => (
+            <div className="moment" key={i}>
+              <div className="time">{e.allDay ? "Todo el día" : new Date(e.start).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit", hour12: false })}</div>
+              <div>
+                <div className="what">{e.title}</div>
+                {e.location && <div className="where">{e.location}</div>}
+              </div>
+            </div>
+          ))}
         </div>
       ))}
     </div>
@@ -1246,6 +1293,26 @@ function useWeather() {
   return w;
 }
 
+// Agenda real — llama a nuestra propia API route (/api/calendar), que en el
+// servidor lee la URL secreta de Google Calendar y devuelve los eventos
+// de los próximos 7 días. Nunca vemos la URL secreta desde el navegador.
+function useCalendarEvents() {
+  const [state, setState] = useState({ loading: true, events: [], error: null });
+  useEffect(() => {
+    fetch("/api/calendar")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error) {
+          setState({ loading: false, events: [], error: d.error });
+        } else {
+          setState({ loading: false, events: d.events || [], error: null });
+        }
+      })
+      .catch((err) => setState({ loading: false, events: [], error: String(err) }));
+  }, []);
+  return state;
+}
+
 // BTC + dirección (sube/baja vs 24h) + dólar CCL/MEP
 function useMarket() {
   const [m, setM] = useState({ btc: null, pct: null, dir: null, dolar: null, mep: null });
@@ -1501,6 +1568,18 @@ const CSS = `
 section{padding:56px 0;border-top:1px solid var(--line)}
 .sec-label{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-4);margin-bottom:22px}
 .split{display:grid;grid-template-columns:1fr 1fr;gap:44px}
+
+/* agenda real (Google Calendar) */
+.agenda-empty{color:var(--ink-4);font-size:14.5px;padding:8px 0}
+.agenda-real{display:flex;flex-direction:column;gap:4px}
+.agenda-group{margin-bottom:4px}
+.agenda-day{font-size:12px;color:var(--accent);letter-spacing:.02em;padding:14px 0 4px;text-transform:capitalize}
+.agenda-group:first-child .agenda-day{padding-top:0}
+.moment{display:flex;align-items:baseline;gap:14px;padding:9px 0;border-bottom:1px solid var(--line)}
+.moment:last-child{border-bottom:none}
+.moment .time{flex:none;width:78px;font-size:13px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.moment .what{font-size:15px;color:var(--ink);letter-spacing:-.01em}
+.moment .where{font-size:12.5px;color:var(--ink-3);margin-top:1px}
 .split-col{min-width:0}
 
 .list{display:flex;flex-direction:column}
