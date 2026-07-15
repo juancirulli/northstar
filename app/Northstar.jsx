@@ -14,7 +14,7 @@ import { useState, useEffect, useRef } from "react";
     • Dólar  → dolarapi.com (CCL/MEP)
 
   Módulos ("Tu vida") → menú hamburguesa arriba a la derecha.
-  Calendario y Pendientes → editar, arrastrar y reordenar.
+  El día y Pendientes → editar, arrastrar y reordenar.
   ------------------------------------------------------------------
 */
 
@@ -28,6 +28,8 @@ const WEATHER_DESC = {
   80: "chaparrones", 81: "chaparrones", 82: "chaparrones fuertes", 95: "tormenta", 96: "tormenta", 99: "tormenta",
 };
 
+// NOTA: los cumpleaños ahora se leen de Google Calendar (ver useBirthdayEvent
+// y BirthdaysView), no de esta lista. La dejamos solo como referencia/fallback.
 const BIRTHDAYS = [
   { name: "Mamá", day: 13, month: 7 },
   { name: "Martín", day: 22, month: 7 },
@@ -176,7 +178,7 @@ function Home({ go }) {
   const now = useNow();
   const weather = useWeather();
   const market = useMarket();
-  const bday = useBirthday();
+  const bday = useBirthdayEvent();
   const voice = useDailyVoice();
 
   const hour = now ? now.getHours() : 8;
@@ -216,9 +218,20 @@ function Home({ go }) {
                   </span>
                 )}
               </div>
-              <div className={`chip chip-tap${bday ? " chip-on" : ""}`} onClick={() => go("birthdays")}>
-                <span className="chip-k">Cumpleaños</span>
-                <span className="chip-v">{bday || "—"}</span>
+              <div className={`chip chip-tap${bday.today ? " chip-on" : ""}`} onClick={() => go("birthdays")}>
+                <span className="chip-k">{bday.today ? "Cumpleaños" : "Próximo cumpleaños"}</span>
+                <span className="chip-v">
+                  {bday.today
+                    ? cleanBirthdayName(bday.today.title)
+                    : bday.next
+                    ? cleanBirthdayName(bday.next.title)
+                    : "—"}
+                </span>
+                {!bday.today && bday.next && (
+                  <span className="chip-x">
+                    {cap(new Date(bday.next.start).toLocaleDateString("es-AR", { day: "numeric", month: "short" }))}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -239,7 +252,7 @@ function Home({ go }) {
       <section>
         <div className="split">
           <div className="split-col">
-            <div className="sec-label">Calendario</div>
+            <div className="sec-label">El día</div>
             <Agenda />
           </div>
           <div className="split-col">
@@ -1154,55 +1167,50 @@ function BtcView({ go }) {
 
 // ---------------- BIRTHDAYS VIEW (próximos, ordenados) ----------------
 function BirthdaysView({ go }) {
-  const [list, setList] = useStored("birthdays", BIRTHDAYS);
-  const [name, setName] = useState("");
-  const [date, setDate] = useState("");
+  const [state, setState] = useState({ loading: true, list: [] });
 
-  const withCountdown = list.map((b) => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    let next = new Date(today.getFullYear(), b.month - 1, b.day);
-    if (next < today) next = new Date(today.getFullYear() + 1, b.month - 1, b.day);
-    const days = Math.round((next - today) / 86400000);
-    return { ...b, next, days };
-  }).sort((a, b) => a.days - b.days);
-
-  const add = () => {
-    if (!name.trim() || !date) return;
-    const d = new Date(date + "T00:00:00");
-    setList((l) => [...l, { name: name.trim(), day: d.getDate(), month: d.getMonth() + 1 }]);
-    setName(""); setDate("");
-  };
-  const remove = (idx) => {
-    const target = withCountdown[idx];
-    setList((l) => l.filter((b) => !(b.name === target.name && b.day === target.day && b.month === target.month)));
-  };
+  useEffect(() => {
+    fetch("/api/calendar?days=400")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error || !d.events) { setState({ loading: false, list: [] }); return; }
+        const now = new Date(); now.setHours(0, 0, 0, 0);
+        const list = d.events
+          .filter((e) => /cumple|birthday/i.test(e.title))
+          .map((e) => {
+            const dateObj = new Date(e.start);
+            const days = Math.round((dateObj - now) / 86400000);
+            return { name: cleanBirthdayName(e.title), dateObj, days };
+          })
+          .sort((a, b) => a.days - b.days);
+        setState({ loading: false, list });
+      })
+      .catch(() => setState({ loading: false, list: [] }));
+  }, []);
 
   return (
     <div className="shell">
-      <DetailHead go={go} title="Cumpleaños" sub="Los próximos, ordenados por cercanía" />
-      <div className="rows">
-        {withCountdown.map((b, i) => (
-          <div className="r bday-row" key={i}>
-            <div className="r-main">
-              {b.name}
-              <div className="r-sub">{b.day} de {MONTHS[b.month - 1]}</div>
+      <DetailHead go={go} title="Cumpleaños" sub="Desde tu Google Calendar, ordenados por cercanía" />
+      {state.loading ? (
+        <p className="lead">Cargando cumpleaños…</p>
+      ) : state.list.length === 0 ? (
+        <p className="lead">No encontramos cumpleaños en tu calendario. Se detectan eventos cuyo título contiene "cumple" o "birthday".</p>
+      ) : (
+        <div className="rows">
+          {state.list.map((b, i) => (
+            <div className="r bday-row" key={i}>
+              <div className="r-main">
+                {b.name}
+                <div className="r-sub">{b.dateObj.getDate()} de {MONTHS[b.dateObj.getMonth()]}</div>
+              </div>
+              <span className={`r-val ${b.days <= 7 ? "warn" : ""}`}>
+                {b.days === 0 ? "¡hoy!" : b.days === 1 ? "mañana" : `en ${b.days} días`}
+              </span>
             </div>
-            <span className={`r-val ${b.days <= 7 ? "warn" : ""}`}>
-              {b.days === 0 ? "¡hoy!" : b.days === 1 ? "mañana" : `en ${b.days} días`}
-            </span>
-            <button className="erow-del" onClick={() => remove(i)} aria-label="Eliminar">×</button>
-          </div>
-        ))}
-      </div>
-      <div className="block">
-        <div className="block-label">Agregar cumpleaños</div>
-        <div className="bday-add">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre" />
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          <button onClick={add}>Agregar</button>
+          ))}
         </div>
-      </div>
-      <p className="note">La sincronización con Google Calendar llegará cuando conectemos tu cuenta.</p>
+      )}
+      <p className="note">Se leen de tu calendario principal. Para agregar o editar un cumpleaños, hacelo directamente en Google Calendar con "cumple" o "birthday" en el título.</p>
       <Foot />
     </div>
   );
@@ -1337,15 +1345,49 @@ function useMarket() {
   return m;
 }
 
-function useBirthday() {
-  const [name, setName] = useState(null);
+// Cumpleaños desde Google Calendar: pide una ventana amplia (400 días) para
+// poder encontrar el próximo cumpleaños aunque falten meses, y se queda con
+// los eventos cuyo título contiene "cumple" o "birthday".
+function useBirthdayEvent() {
+  const [state, setState] = useState({ loading: true, today: null, next: null });
   useEffect(() => {
-    const now = new Date();
-    const d = now.getDate(), mo = now.getMonth() + 1;
-    const hits = BIRTHDAYS.filter((b) => b.day === d && b.month === mo);
-    setName(hits.length ? hits.map((h) => h.name).join(" · ") : null);
+    fetch("/api/calendar?days=400")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.error || !d.events) { setState({ loading: false, today: null, next: null }); return; }
+        const now = new Date(); now.setHours(0, 0, 0, 0);
+        const bdays = d.events
+          .filter((e) => /cumple|birthday/i.test(e.title))
+          .map((e) => ({ ...e, dateObj: new Date(e.start) }))
+          .sort((a, b) => a.dateObj - b.dateObj);
+
+        const today = bdays.find((b) => {
+          const bd = new Date(b.dateObj); bd.setHours(0, 0, 0, 0);
+          return bd.getTime() === now.getTime();
+        });
+        // "Próximo cumpleaños" solo cuenta si cae dentro de los próximos 30 días.
+        // Más lejos que eso, mostramos "—" en vez de una fecha lejana sin sentido.
+        const next = bdays.find((b) => {
+          if (b.dateObj <= now) return false;
+          const days = Math.round((b.dateObj - now) / 86400000);
+          return days <= 30;
+        });
+        setState({ loading: false, today: today || null, next: next || null });
+      })
+      .catch(() => setState({ loading: false, today: null, next: null }));
   }, []);
-  return name;
+  return state;
+}
+
+// Limpia el título del evento para mostrar solo el nombre
+// (quita palabras como "cumple", "cumpleaños", "birthday", signos sueltos)
+function cleanBirthdayName(title) {
+  return title
+    .replace(/cumple(años)?/gi, "")
+    .replace(/birthday/gi, "")
+    .replace(/^de\s+/i, "")
+    .replace(/[:\-–—]+/g, " ")
+    .trim() || title;
 }
 
 // Voz del día: determinística por fecha (misma todo el día, cambia mañana)
